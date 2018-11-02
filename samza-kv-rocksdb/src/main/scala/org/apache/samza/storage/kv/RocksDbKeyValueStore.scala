@@ -121,9 +121,7 @@ class RocksDbKeyValueStore(
   // after the directories are created, which happens much later from now.
   private lazy val db = RocksDbKeyValueStore.openDB(dir, options, storeConfig, isLoggedStore, storeName, metrics)
   private val lexicographic = new LexicographicComparator()
-  // TODO: FIX THIS to not be hard coded later
-  private val backup = new RocksDbBackupStorage("/Users/eripan/Downloads/hadoop-2.7.7/etc/hadoop/core-site.xml","/Users/eripan/Downloads/hadoop-2.7.7/etc/hadoop/hdfs-site.xml", dir.getAbsolutePath(), "/user/eripan/backupTest/")
-
+  private lazy val backup = new RocksDbBackupStorage(storeConfig, db)
   /**
     * null while the store is open. Set to an Exception holding the stacktrace at the time of first close by #close.
     * Reads and writes to this field must be guarded by stateChangeLock.
@@ -231,6 +229,7 @@ class RocksDbKeyValueStore(
     metrics.flushes.inc
     trace("Flushing store: %s" format storeName)
     db.flush(flushOptions)
+
     db.pauseBackgroundWork()
     backup.createBackup()
     db.continueBackgroundWork()
@@ -244,7 +243,6 @@ class RocksDbKeyValueStore(
       if (stackAtFirstClose == null) { // first close
         stackAtFirstClose = new Exception()
         db.close()
-        backup.closeFileSystem()
       } else {
         warn(new SamzaException("Close called again on a closed store: %s. Ignoring this close." +
           "Stack at first close is under 'Caused By'." format storeName, stackAtFirstClose))
@@ -310,7 +308,7 @@ class RocksDbKeyValueStore(
       iter.next()
       metrics.bytesRead.inc(entry.getKey.length)
       if (entry.getValue != null) {
-        metrics.bytesRead.inc(entry.getValue.length)
+         metrics.bytesRead.inc(entry.getValue.length)
       }
       entry
     }

@@ -21,12 +21,14 @@ package org.apache.samza.storage
 
 import java.io._
 import java.util
+import java.util.HashMap
 
-import org.apache.samza.config.StorageConfig
+import org.apache.samza.config.{MapConfig, StorageConfig}
 import org.apache.samza.{Partition, SamzaException}
 import org.apache.samza.container.TaskName
 import org.apache.samza.system._
 import org.apache.samza.util.{Clock, FileUtil, Logging}
+import org.apache.samza.config.Config
 
 object TaskStorageManager {
   def getStoreDir(storeBaseDir: File, storeName: String) = {
@@ -211,6 +213,17 @@ class TaskStorageManager(
         val systemStreamPartition = new SystemStreamPartition(systemStream, partition)
         val systemConsumer = storeConsumers(storeName)
         val systemConsumerIterator = new SystemStreamPartitionIterator(systemConsumer, systemStreamPartition)
+
+        // Create a store backup engine to restore from hdfs location
+        val map = new util.HashMap[String, String]
+        // TODO: Change these values to something more generic
+        map.put("rocksdb.checkpointDir", System.getProperty("java.io.tmpdir") + "/checkpoint")
+        map.put("hdfs.backupDir", "/Users/eripan/backupTest")
+        // Assumption that restore stores are always logged
+        map.put("rocksdb.dbDir", TaskStorageManager.getStorePartitionDir(loggedStoreBaseDir, storeName, taskName).getAbsolutePath)
+        val backup = new StoreBackupEngine(new MapConfig(map))
+        backup.restoreBackup()
+
         store.restore(systemConsumerIterator)
       }
     }
@@ -236,7 +249,6 @@ class TaskStorageManager(
 
   def stop() {
     stopStores()
-
     flushChangelogOffsetFiles()
   }
 

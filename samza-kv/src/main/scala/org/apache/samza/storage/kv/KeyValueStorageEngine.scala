@@ -19,6 +19,8 @@
 
 package org.apache.samza.storage.kv
 
+import java.io.File
+
 import org.apache.samza.util.Logging
 import org.apache.samza.storage.{StorageEngine, StoreProperties}
 import org.apache.samza.system.IncomingMessageEnvelope
@@ -38,9 +40,7 @@ class KeyValueStorageEngine[K, V](
   metrics: KeyValueStorageEngineMetrics = new KeyValueStorageEngineMetrics,
   batchSize: Int = 500,
   val clock: () => Long = { System.nanoTime }) extends StorageEngine with KeyValueStore[K, V] with TimerUtil with Logging {
-
   var count = 0
-
   /* delegate to underlying store */
   def get(key: K): V = {
     updateTimer(metrics.getNs) {
@@ -105,8 +105,8 @@ class KeyValueStorageEngine[K, V](
    */
   def restore(envelopes: java.util.Iterator[IncomingMessageEnvelope]) {
     info("Restoring entries for store " + metrics.storeName)
-
-    val batch = new java.util.ArrayList[Entry[Array[Byte], Array[Byte]]](batchSize)
+    // Comment out changelog restore method for new backup version
+    /*val batch = new java.util.ArrayList[Entry[Array[Byte], Array[Byte]]](batchSize)
 
     for (envelope <- envelopes.asScala) {
       val keyBytes = envelope.getKey.asInstanceOf[Array[Byte]]
@@ -140,7 +140,7 @@ class KeyValueStorageEngine[K, V](
 
     if (batch.size > 0) {
       doPutAll(rawStore, batch)
-    }
+    } */
   }
 
   def flush() = {

@@ -6,147 +6,115 @@ import java.util.ArrayList;
 import org.apache.hadoop.conf.*;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
 import org.apache.samza.SamzaException;
+import org.apache.samza.metrics.MetricsRegistryMap;
+import org.apache.samza.storage.StoreBackupEngine;
+import org.rocksdb.Checkpoint;
 import org.rocksdb.RocksDB;
 import java.util.HashMap;
+import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.samza.config.Config;
 
+// Class to handle all operations relating to creating backups for RocksDB
+public class RocksDbBackupStorage extends StoreBackupEngine {
+  // Variables for checkpoint info
+  protected Path checkpointPath;
+  protected Checkpoint checkpoint;
+  protected File checkpointFile;
 
-public class RocksDbBackupStorage {
-  private static final Logger LOGGER = LoggerFactory.getLogger(RocksDbBackupStorage.class);
-  private FileSystem fs;
-  private Path hdfsPath;
-  private Path localPath;
-  public RocksDbBackupStorage(String coreSitePath, String hdfsSitePath, String localPathStr, String hdfsPathStr) {
-    localPath = new Path(localPathStr);
-    hdfsPath = new Path(hdfsPathStr);
-
-    Configuration conf = new Configuration();
-    Path hdfsCoreSitePath = new Path(coreSitePath);
-    Path hdfsHDFSSitePath = new Path(hdfsSitePath);
-    conf.addResource(hdfsCoreSitePath);
-    conf.addResource(hdfsHDFSSitePath);
-    try {
-      fs = FileSystem.get(conf);
-      // No need to check if localPath is dir since it's checked when rocksdb is created
-      if (fs.exists(hdfsPath)) {
-        if(fs.isFile(hdfsPath)) {
-          throw new SamzaException("Error creating backup in hdfs: Path is already a file");
-        }
-      } else {
-        fs.mkdirs(hdfsPath);
-      }
-
-    } catch(IOException e) {
-      throw new SamzaException("Failed to create hdfs filesystem from: " + e);
-    }
-
+  public RocksDbBackupStorage(Config storeConfig, RocksDB db) {
+    super(storeConfig);
+    // Setup RockDb's checkpoint info
+    checkpoint = Checkpoint.create(db);
+    checkpointPath = new Path(storeConfig.get("rocksdb.checkpointDir", "/Users/eripan/checkpoint"));
+    checkpointFile =  new File(checkpointPath.toString());
   }
 
-  // Should this be void?
+  // Method to create RocksDb checkpoint
+  private void createCheckpoint() {
+    try {
+      // Delete checkpoint dir if it already exists
+      if(checkpointFile.exists())
+        deleteCheckpointDir();
+
+      // Track how much time to create rockdb checkpoint
+      long startTime = System.currentTimeMillis();
+      // Method: createCheckpoint(pathToCheckpointDir)
+      checkpoint.createCheckpoint(checkpointPath.toString());
+      long timeElapsed = System.currentTimeMillis() - startTime;
+      LOGGER.info("Time taken to create RockDb's checkpoint: " + timeElapsed);
+    } catch (RocksDBException e) {
+      LOGGER.error("Can't create checkpoint for db at: " + checkpointPath.toString());
+    }
+  }
+
+  // Method to delete RockDb's checkpoint
+  private void deleteCheckpointDir() {
+    long startTime = System.currentTimeMillis();
+
+    // Delete rockdb's directory
+    if (checkpointFile.exists()) {
+      if (!FileUtil.fullyDelete(checkpointFile)) {
+        throw new SamzaException("can not delete the checkpoint directory at: " + checkpointFile.getAbsolutePath());
+      }
+    }
+
+    //Print time take for creating checkpoint
+    long timeElapsed = System.currentTimeMillis() - startTime;
+    LOGGER.info("Time taken to delete RockDb's checkpoint: " + timeElapsed);
+  }
+
+  // Method to create backup in hdfs
   public Boolean createBackup() throws IOException {
+    metrics.backups().inc();
+
     // TODO add flag to skip statistic tracking
     long startTime = System.currentTimeMillis();
-    long totalSizeCopied = 0;
-    // Get all files that are unique to local / modified since last backup (like manifest) and copy them to backup hdfs
-    ArrayList<File> dbFilesToCopy = getExtraFilesInLocalCompareToBackup();
-    for (File dbFile : dbFilesToCopy) {
-      System.out.print(dbFilesToCopy);
-      totalSizeCopied += dbFile.length();
-      Path pathToFile = new Path(dbFile.getAbsolutePath());
-      fs.copyFromLocalFile(false,true, pathToFile, hdfsPath);
+    long totalBytesCopied = 0;
+    long totalBytesDeleted = 0;
+
+    // Create a checkpoint
+    createCheckpoint();
+ba
+    // Get all files in checkpoint that are new / modified since last backup
+    // (like manifest) and copy them to backup hdfs
+    ArrayList<File> checkpointFilesToCopy = getNewFilesInLocalToBackup(checkpointPath);
+    for (File checkpointFile : checkpointFilesToCopy) {
+      LOGGER.info("Found file: " + checkpointFile.getName());
+      totalBytesCopied += checkpointFile.length();
+      Path pathToFile = new Path(checkpointFile.getAbsolutePath());
+      // Method: copyFromLocalFile(delSrc, overwrite, localFilePath, hdfsFilePath)
+      fs.copyFromLocalFile(false, true, pathToFile, hdfsPath);
     }
+    metrics.bytesBackedUp().inc(totalBytesCopied);
+    metrics.numFilesBackedUp().inc(checkpointFilesToCopy.size());
 
     // Print statistics of creating a backup
-    long endTime = System.currentTimeMillis();
-    long timeElapsed = endTime - startTime;
+    long timeElapsed = System.currentTimeMillis() - startTime;
     LOGGER.info("Creating backup finished in milliseconds: " + timeElapsed);
-    LOGGER.info("Copied " + dbFilesToCopy.size() + " files to backup");
-    LOGGER.info("Total size copied over: " + totalSizeCopied);
+    LOGGER.info("Copied " + checkpointFilesToCopy.size() + " files to backup");
+    LOGGER.info("Total size copied over: " + totalBytesCopied);
+
+    // Delete unneeded files in backup compared to checkpoint
+    ArrayList<FileStatus> backupFilesToDelete = getNewFilesInBackupToLocal(checkpointPath);
+    for (FileStatus backupFile : backupFilesToDelete) {
+      LOGGER.info("Found file: " + backupFile.getPath().getName());
+      totalBytesDeleted += backupFile.getLen();
+      // Method: delete(hdfsFilePath, recursive)
+      fs.delete(backupFile.getPath(), true);
+    }
+    // Print statistics for deleting
+    metrics.numFilesDeleted().inc(backupFilesToDelete.size());
+    metrics.bytesDeleted().inc(totalBytesDeleted);
+    LOGGER.info("Deleted " + backupFilesToDelete.size() + " files from backup directory");
+    LOGGER.info("Total size deleted: " + totalBytesDeleted);
+
+    // Delete checkpoint directory
+    deleteCheckpointDir();
     return true;
   }
-
-  public Boolean restoreBackup(RocksDB db) throws IOException {
-    // Test if doesn't delete srcDir files - doesn't
-    fs.copyToLocalFile(hdfsPath, localPath);
-    return true;
-  }
-
-  // Should be used when checking backup for any unnecessary files
-  // Not 100% sure when this should run, after creating a backup?
-  public ArrayList getExtraFilesInBackupCompareToLocal() throws IOException {
-    HashMap<String, File> localFileHmap = new HashMap<String, File>();
-    ArrayList<FileStatus> filesNotInLocalList = new ArrayList<FileStatus>();
-    // Store all the Rocksdb files in hashmap for quick comparison
-    File dbDir = new File(localPath.toString());
-    File[] filesList = dbDir.listFiles();
-    for (File dbFile : filesList) {
-      String fileName = dbFile.getName();
-      // Skip lock file
-      if (fileName.equals("LOCK")) continue;
-      localFileHmap.put(fileName, dbFile);
-    }
-
-    // Get all files in the hdfs backup and compare to local. Add if different/doesn't exist
-    FileStatus[] backupFileIterator = fs.listStatus(hdfsPath);
-    for (FileStatus backupFile : backupFileIterator) {
-      String fileName = backupFile.getPath().getName();
-      // Skip lock file
-      if (fileName.equals("LOCK")) continue;
-
-      if (localFileHmap.containsKey(fileName)) {
-        // TODO: This may not be good enough check if things fail to copy or weird things happen, probably an edge case here to consider
-        if (backupFile.getLen() < localFileHmap.get(fileName).length()) {
-          filesNotInLocalList.add(backupFile);
-        }
-      } else {
-        filesNotInLocalList.add(backupFile);
-      }
-    }
-
-    return filesNotInLocalList;
-  }
-
-  public ArrayList<File> getExtraFilesInLocalCompareToBackup() throws IOException {
-    HashMap<String, FileStatus> hdfsFileHmap = new HashMap<String, FileStatus>();
-    ArrayList<File> filesNotInHDFSList = new ArrayList<File>();
-    // Store all the backup files in hashmap for quick comparison
-    FileStatus[] backupFileIterator = fs.listStatus(hdfsPath);
-    for (FileStatus file : backupFileIterator) {
-      String fileName = file.getPath().getName();
-      // Skip lock file
-      if (fileName.equals("LOCK"))
-        continue;
-      hdfsFileHmap.put(fileName, file);
-    }
-
-    // Get all files in the local db and compare to backup. Add if different/doesn't exist
-    File dbDir = new File(localPath.toString());
-    File[] filesList = dbDir.listFiles();
-    for (File dbFile : filesList) {
-      String fileName = dbFile.getName();
-      // Skip lock file
-      if (fileName.equals("LOCK"))
-        continue;
-
-      if (hdfsFileHmap.containsKey(fileName)) {
-        // TODO: This may not be good enough check if things fail to copy or weird things happen, probably an edge case here to consider
-        // Like if the files just happen to have the same length but different contents or smth because of overwritten?
-        if (dbFile.length() > hdfsFileHmap.get(fileName).getLen()) {
-          filesNotInHDFSList.add(dbFile);
-        }
-      } else {
-        filesNotInHDFSList.add(dbFile);
-      }
-    }
-
-    return filesNotInHDFSList;
-  }
-
-  public void closeFileSystem() throws IOException {
-    fs.close();
-  }
-
 }

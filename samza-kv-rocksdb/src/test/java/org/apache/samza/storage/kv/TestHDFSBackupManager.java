@@ -31,7 +31,11 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.samza.SamzaException;
 import org.apache.samza.config.Config;
 import org.apache.samza.config.MapConfig;
+import org.apache.samza.metrics.MetricsRegistry;
 import org.apache.samza.metrics.MetricsRegistryMap;
+import org.apache.samza.storage.BackupUtil;
+import org.apache.samza.storage.HDFSConfigs;
+import org.apache.samza.storage.HDFSRestoreManager;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -41,9 +45,8 @@ import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteOptions;
-import org.apache.samza.storage.StoreBackupEngine;
 
-public class TestRocksDbBackupStorage {
+public class TestHDFSBackupManager {
   // Set testing values for storage locations
   private static final String DB_NAME = "testRocksDbStore";
   private static String dbStrPath = System.getProperty("java.io.tmpdir") + "/DB";
@@ -51,26 +54,28 @@ public class TestRocksDbBackupStorage {
   private static String backupStrPath = "/Users/eripan/backup";
   private static Path backupPath = new Path(backupStrPath);
   private static String checkpointStrPath = "/Users/eripan/checkpoint";
+  private static String hdfsDefaultName = "hdfs://localhost:9000";
   private static FileSystem fs = null;
   private static Config config;
+  private static MetricsRegistry metricsReg = new MetricsRegistryMap("test");
 
   static private RocksDbKeyValueStore createStore() {
     // Configs for setting up backup in RocksdbKVStore
     HashMap<String, String> map = new HashMap<String, String>();
-    map.put("rocksdb.checkpointDir", checkpointStrPath);
-    map.put("hdfs.backupDir", backupStrPath);
-    map.put("rocksdb.dbDir", dbStrPath);
+    map.put(HDFSConfigs.CHECKPOINT_PATH, checkpointStrPath);
+    map.put(HDFSConfigs.BACKUP_PATH, backupStrPath);
+    map.put(HDFSConfigs.FS_DEFAULT_NAME, hdfsDefaultName);
     config = new MapConfig(map);
     Options options = new Options().setCreateIfMissing(true);
     return new RocksDbKeyValueStore(dbFile, options, config, false, DB_NAME,
-        new WriteOptions(), new FlushOptions(), new KeyValueStoreMetrics("dbStore", new MetricsRegistryMap()));
+        new WriteOptions(), new FlushOptions(), new KeyValueStoreMetrics("dbStore", metricsReg));
   }
 
   @BeforeClass
   static public void setup() throws IOException {
     // Set up FileSystem for HDFS commands
     Configuration conf = new Configuration();
-    conf.set("fs.default.name", "hdfs://localhost:9000");
+    conf.set(HDFSConfigs.FS_DEFAULT_NAME, hdfsDefaultName);
     fs = FileSystem.get(conf);
   }
 
@@ -83,7 +88,7 @@ public class TestRocksDbBackupStorage {
     store.flush();
 
     File checkpointDir = new File(checkpointStrPath);
-    // After test checkpoint location is cleaned up
+    // After test, check checkpoint location is cleaned up
     Assert.assertTrue(!checkpointDir.exists());
     HashMap<String, File> fileMap = new HashMap<String, File>();
     for(File file : dbFile.listFiles()) {
@@ -98,7 +103,7 @@ public class TestRocksDbBackupStorage {
       }
       fs.delete(backupPath,true);
     } catch(IOException e) {
-      throw new SamzaException("Error occurred while trying to use hdfs filesystem: " + e);
+      throw new SamzaException("Error occurred while trying to use hdfs filesystem: " + backupPath, e);
     }
     tearDown(store);
   }
@@ -115,8 +120,8 @@ public class TestRocksDbBackupStorage {
 
     try {
       // Check if the key value is there after restore
-      StoreBackupEngine restoreTest = new StoreBackupEngine(config);
-      restoreTest.restoreBackup();
+      HDFSRestoreManager restoreTest = new HDFSRestoreManager(config, dbStrPath, metricsReg);
+      restoreTest.restore();
       store = createStore();
       store.put("testest".getBytes(), key);
       Assert.assertEquals("val", new String(store.get(key)));

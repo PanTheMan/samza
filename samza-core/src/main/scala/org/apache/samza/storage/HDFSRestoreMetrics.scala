@@ -21,17 +21,15 @@ package org.apache.samza.storage
 
 import org.apache.samza.metrics.{MetricsHelper, MetricsRegistry, MetricsRegistryMap}
 
-class StoreBackupMetrics(
+class HDFSRestoreMetrics(
   val backupName: String = "unknown",
   val registry: MetricsRegistry = new MetricsRegistryMap) extends MetricsHelper {
 
-  val backups = newCounter("backups")
-  val numFilesBackedUp = newCounter("numFilesBackedUp")
-  val restores = newCounter("restores")
-  val numFilesRestored = newCounter("numFilesRestored")
-  val bytesBackedUp = newCounter("bytes-backedup")
+  val totalTimeRestore = newTimer("totalTimeRestore")
+  val numFilesRestored = newGauge("numFilesRestored", 0)
   val bytesRestored = newCounter("bytes-restored")
-  val numFilesDeleted = newCounter("numLocalFilesDeleted")
+  val totalTimeCleaningLocalDir = newTimer("totalTimeCleaningLocalDir")
+  val numFilesDeleted = newGauge("numLocalFilesDeleted", 0)
   val bytesDeleted = newCounter("localBytesDeleted")
 
   override def getPrefix = backupName + "-"

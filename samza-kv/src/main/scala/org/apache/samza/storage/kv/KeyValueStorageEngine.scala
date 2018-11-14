@@ -34,6 +34,7 @@ import scala.collection.JavaConverters._
  * This implements both the key/value interface and the storage engine interface.
  */
 class KeyValueStorageEngine[K, V](
+
   storeProperties: StoreProperties,
   wrapperStore: KeyValueStore[K, V],
   rawStore: KeyValueStore[Array[Byte], Array[Byte]],
@@ -106,7 +107,7 @@ class KeyValueStorageEngine[K, V](
   def restore(envelopes: java.util.Iterator[IncomingMessageEnvelope]) {
     info("Restoring entries for store " + metrics.storeName)
     // Comment out changelog restore method for new backup version
-    /*val batch = new java.util.ArrayList[Entry[Array[Byte], Array[Byte]]](batchSize)
+    val batch = new java.util.ArrayList[Entry[Array[Byte], Array[Byte]]](batchSize)
 
     for (envelope <- envelopes.asScala) {
       val keyBytes = envelope.getKey.asInstanceOf[Array[Byte]]
@@ -140,7 +141,7 @@ class KeyValueStorageEngine[K, V](
 
     if (batch.size > 0) {
       doPutAll(rawStore, batch)
-    } */
+    }
   }
 
   def flush() = {

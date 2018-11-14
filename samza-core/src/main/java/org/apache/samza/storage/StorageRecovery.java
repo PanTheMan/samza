@@ -249,6 +249,8 @@ public class StorageRecovery extends CommandLine {
             storeBaseDir,
             taskModel.getChangelogPartition(),
             systemAdmins,
+            new MetricsRegistryMap(),
+            new StorageConfig(jobConfig),
             new StorageConfig(jobConfig).getChangeLogDeleteRetentionsInMs(),
             new SystemClock());
 

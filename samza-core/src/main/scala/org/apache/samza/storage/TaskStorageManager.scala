@@ -23,12 +23,13 @@ import java.io._
 import java.util
 import java.util.HashMap
 
+import org.apache.samza.config._
 import org.apache.samza.config.{MapConfig, StorageConfig}
 import org.apache.samza.{Partition, SamzaException}
 import org.apache.samza.container.TaskName
+import org.apache.samza.metrics.MetricsRegistry
 import org.apache.samza.system._
 import org.apache.samza.util.{Clock, FileUtil, Logging}
-import org.apache.samza.config.Config
 
 object TaskStorageManager {
   def getStoreDir(storeBaseDir: File, storeName: String) = {
@@ -56,6 +57,8 @@ class TaskStorageManager(
   loggedStoreBaseDir: File = new File(System.getProperty("user.dir"), "state"),
   partition: Partition,
   systemAdmins: SystemAdmins,
+  registry: MetricsRegistry,
+  storageConfig: StorageConfig,
   changeLogDeleteRetentionsInMs: Map[String, Long],
   clock: Clock) extends Logging {
 
@@ -209,22 +212,20 @@ class TaskStorageManager(
 
     for ((storeName, store) <- taskStoresToRestore) {
       if (changeLogSystemStreams.contains(storeName)) {
-        val systemStream = changeLogSystemStreams(storeName)
-        val systemStreamPartition = new SystemStreamPartition(systemStream, partition)
-        val systemConsumer = storeConsumers(storeName)
-        val systemConsumerIterator = new SystemStreamPartitionIterator(systemConsumer, systemStreamPartition)
+        // Check configs for restore method
+        if (storageConfig.getHDFSRestoreEnabled()) {
+          val loggedStorePartitionDir = TaskStorageManager.getStorePartitionDir(loggedStoreBaseDir, storeName, taskName)
+          val HDFSRestoreManager = new HDFSRestoreManager(storageConfig, loggedStorePartitionDir.getAbsolutePath, registry)
+          HDFSRestoreManager.restore();
+        // Use changelog to restore if flag wasn't set
+        } else {
+          val systemStream = changeLogSystemStreams(storeName)
+          val systemStreamPartition = new SystemStreamPartition(systemStream, partition)
+          val systemConsumer = storeConsumers(storeName)
+          val systemConsumerIterator = new SystemStreamPartitionIterator(systemConsumer, systemStreamPartition)
 
-        // Create a store backup engine to restore from hdfs location
-        val map = new util.HashMap[String, String]
-        // TODO: Change these values to something more generic
-        map.put("rocksdb.checkpointDir", System.getProperty("java.io.tmpdir") + "/checkpoint")
-        map.put("hdfs.backupDir", "/Users/eripan/backupTest")
-        // Assumption that restore stores are always logged
-        map.put("rocksdb.dbDir", TaskStorageManager.getStorePartitionDir(loggedStoreBaseDir, storeName, taskName).getAbsolutePath)
-        val backup = new StoreBackupEngine(new MapConfig(map))
-        backup.restoreBackup()
-
-        store.restore(systemConsumerIterator)
+          store.restore(systemConsumerIterator)
+        }
       }
     }
   }

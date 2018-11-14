@@ -26,6 +26,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import org.apache.samza.SamzaException
 import org.apache.samza.config.Config
+import org.apache.samza.storage.HDFSConfigs
 import org.apache.samza.util.Logging
 import org.rocksdb.{TtlDB, _}
 import org.rocksdb.util
@@ -121,7 +122,7 @@ class RocksDbKeyValueStore(
   // after the directories are created, which happens much later from now.
   private lazy val db = RocksDbKeyValueStore.openDB(dir, options, storeConfig, isLoggedStore, storeName, metrics)
   private val lexicographic = new LexicographicComparator()
-  private lazy val backup = new RocksDbBackupStorage(storeConfig, db)
+  private lazy val backup = new HDFSBackupManager(storeConfig, db, metrics.registry)
   /**
     * null while the store is open. Set to an Exception holding the stacktrace at the time of first close by #close.
     * Reads and writes to this field must be guarded by stateChangeLock.

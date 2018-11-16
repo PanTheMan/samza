@@ -23,7 +23,7 @@ import java.io.File
 
 import org.apache.samza.SamzaException
 import org.apache.samza.container.SamzaContainerContext
-import org.apache.samza.context.{ContainerContext, JobContext}
+import org.apache.samza.context.JobContext
 import org.apache.samza.metrics.MetricsRegistry
 import org.apache.samza.serializers.Serde
 import org.apache.samza.storage.{StorageEngine, StorageEngineFactory, StoreProperties}
@@ -53,11 +53,11 @@ trait BaseKeyValueStorageEngineFactory[K, V] extends StorageEngineFactory[K, V] 
    * @param containerContext Information about the container in which the task is executing.
    * @return A valid KeyValueStore instance
    */
-  def getKVStore(storeName: String,
-    storeDir: File,
-    registry: MetricsRegistry,
-    changeLogSystemStreamPartition: SystemStreamPartition,
-    containerContext: ContainerContext): KeyValueStore[Array[Byte], Array[Byte]]
+  def getKVStore( storeName: String,
+                  storeDir: File,
+                  registry: MetricsRegistry,
+                  changeLogSystemStreamPartition: SystemStreamPartition,
+                  containerContext: SamzaContainerContext): KeyValueStore[Array[Byte], Array[Byte]]
 
   /**
    * Constructs a key-value StorageEngine and returns it to the caller
@@ -71,16 +71,16 @@ trait BaseKeyValueStorageEngineFactory[K, V] extends StorageEngineFactory[K, V] 
    * @param changeLogSystemStreamPartition Samza stream partition from which to receive the changelog.
    * @param containerContext Information about the container in which the task is executing.
    **/
-  def getStorageEngine(storeName: String,
-    storeDir: File,
-    keySerde: Serde[K],
-    msgSerde: Serde[V],
-    collector: MessageCollector,
-    registry: MetricsRegistry,
-    changeLogSystemStreamPartition: SystemStreamPartition,
-    jobContext: JobContext,
-    containerContext: ContainerContext): StorageEngine = {
-    val storageConfig = jobContext.getConfig.subset("stores." + storeName + ".", true)
+  def getStorageEngine( storeName: String,
+                        storeDir: File,
+                        keySerde: Serde[K],
+                        msgSerde: Serde[V],
+                        collector: MessageCollector,
+                        registry: MetricsRegistry,
+                        changeLogSystemStreamPartition: SystemStreamPartition,
+                        jobContext: JobContext,
+                        containerContext: SamzaContainerContext): StorageEngine = {
+    val storageConfig = containerContext.config.subset("stores." + storeName + ".", true)
     val storeFactory = storageConfig.get("factory")
     var storePropertiesBuilder = new StoreProperties.StorePropertiesBuilder()
     val accessLog = storageConfig.getBoolean("accesslog.enabled", false)

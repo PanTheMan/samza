@@ -21,10 +21,10 @@ package org.apache.samza.storage
 
 import java.io._
 import java.util
-import java.util.HashMap
 
 import org.apache.samza.config._
-import org.apache.samza.config.{MapConfig, StorageConfig}
+import org.apache.samza.config.StorageConfig.Config2Storage
+import org.apache.samza.config.StorageConfig
 import org.apache.samza.{Partition, SamzaException}
 import org.apache.samza.container.TaskName
 import org.apache.samza.metrics.MetricsRegistry
@@ -58,7 +58,7 @@ class TaskStorageManager(
   partition: Partition,
   systemAdmins: SystemAdmins,
   registry: MetricsRegistry,
-  storageConfig: StorageConfig,
+  config: Config,
   changeLogDeleteRetentionsInMs: Map[String, Long],
   clock: Clock) extends Logging {
 
@@ -208,14 +208,14 @@ class TaskStorageManager(
   }
 
   private def restoreStores() {
-    debug("Restoring stores.")
+    debug("Restoring stores for task: %s." format taskName.getTaskName)
 
     for ((storeName, store) <- taskStoresToRestore) {
       if (changeLogSystemStreams.contains(storeName)) {
         // Check configs for restore method
-        if (storageConfig.getHDFSRestoreEnabled()) {
+        if (config.getHDFSRestoreEnabled()) {
           val loggedStorePartitionDir = TaskStorageManager.getStorePartitionDir(loggedStoreBaseDir, storeName, taskName)
-          val HDFSRestoreManager = new HDFSRestoreManager(storageConfig, loggedStorePartitionDir.getAbsolutePath, registry)
+          val HDFSRestoreManager = new HDFSRestoreManager(config, loggedStorePartitionDir.getAbsolutePath, registry)
           HDFSRestoreManager.restore();
         // Use changelog to restore if flag wasn't set
         } else {

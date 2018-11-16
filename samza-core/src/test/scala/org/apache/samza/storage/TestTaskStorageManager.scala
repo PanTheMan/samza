@@ -699,7 +699,7 @@ class TaskStorageManagerBuilder extends MockitoSugar {
       partition = partition,
       systemAdmins = buildSystemAdmins(systemAdminsMap),
       registry = new MetricsRegistryMap(),
-      storageConfig = new StorageConfig(new MapConfig()),
+      config = new MapConfig(),
       new StorageConfig(new MapConfig()).getChangeLogDeleteRetentionsInMs,
       SystemClock.instance
     )

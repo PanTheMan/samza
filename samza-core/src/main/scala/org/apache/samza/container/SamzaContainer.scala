@@ -611,7 +611,7 @@ object SamzaContainer extends Logging {
         partition = taskModel.getChangelogPartition,
         systemAdmins = systemAdmins,
         registry = registry,
-        storageConfig = new StorageConfig(config),
+        config = config,
         new StorageConfig(config).getChangeLogDeleteRetentionsInMs,
         new SystemClock)
 

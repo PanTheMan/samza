@@ -19,9 +19,11 @@
 
 package org.apache.samza.storage.kv
 
+import org.apache.samza.config.Config
 import org.apache.samza.util.Logging
 import org.apache.samza.system.{OutgoingMessageEnvelope, SystemStreamPartition}
 import org.apache.samza.task.MessageCollector
+import org.apache.samza.config.StorageConfig.Config2Storage
 
 /**
  * A key/value store decorator that adds a changelog for any changes made to the underlying store
@@ -30,6 +32,7 @@ class LoggedStore[K, V](
   val store: KeyValueStore[K, V],
   val systemStreamPartition: SystemStreamPartition,
   val collector: MessageCollector,
+  val config: Config,
   val metrics: LoggedStoreMetrics = new LoggedStoreMetrics) extends KeyValueStore[K, V] with Logging {
 
   val systemStream = systemStreamPartition.getSystemStream
@@ -61,7 +64,9 @@ class LoggedStore[K, V](
    */
   def put(key: K, value: V) {
     metrics.puts.inc
-    collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, key, value))
+    if (!config.getHDFSRestoreEnabled) {
+      collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, key, value))
+    }
     store.put(key, value)
   }
 
@@ -71,9 +76,11 @@ class LoggedStore[K, V](
   def putAll(entries: java.util.List[Entry[K, V]]) {
     metrics.puts.inc(entries.size)
     val iter = entries.iterator
-    while (iter.hasNext) {
-      val curr = iter.next
-      collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, curr.getKey, curr.getValue))
+    if (!config.getHDFSRestoreEnabled) {
+      while (iter.hasNext) {
+        val curr = iter.next
+        collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, curr.getKey, curr.getValue))
+      }
     }
     store.putAll(entries)
   }
@@ -83,7 +90,9 @@ class LoggedStore[K, V](
    */
   def delete(key: K) {
     metrics.deletes.inc
-    collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, key, null))
+    if (!config.getHDFSRestoreEnabled) {
+      collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, key, null))
+    }
     store.delete(key)
   }
 
@@ -93,8 +102,10 @@ class LoggedStore[K, V](
   override def deleteAll(keys: java.util.List[K]) = {
     metrics.deletes.inc(keys.size)
     val keysIterator = keys.iterator
-    while (keysIterator.hasNext) {
-      collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, keysIterator.next, null))
+    if (!config.getHDFSRestoreEnabled) {
+      while (keysIterator.hasNext) {
+        collector.send(new OutgoingMessageEnvelope(systemStream, partitionId, keysIterator.next, null))
+      }
     }
     store.deleteAll(keys)
   }

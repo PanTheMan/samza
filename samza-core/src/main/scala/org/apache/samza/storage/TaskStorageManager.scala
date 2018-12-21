@@ -22,9 +22,12 @@ package org.apache.samza.storage
 import java.io._
 import java.util
 
+import org.apache.samza.config._
+import org.apache.samza.config.StorageConfig.Config2Storage
 import org.apache.samza.config.StorageConfig
 import org.apache.samza.{Partition, SamzaException}
 import org.apache.samza.container.TaskName
+import org.apache.samza.metrics.MetricsRegistry
 import org.apache.samza.system._
 import org.apache.samza.util.{Clock, FileUtil, Logging}
 
@@ -54,6 +57,8 @@ class TaskStorageManager(
   loggedStoreBaseDir: File = new File(System.getProperty("user.dir"), "state"),
   partition: Partition,
   systemAdmins: SystemAdmins,
+  registry: MetricsRegistry,
+  config: Config,
   changeLogDeleteRetentionsInMs: Map[String, Long],
   clock: Clock) extends Logging {
 
@@ -203,11 +208,20 @@ class TaskStorageManager(
 
     for ((storeName, store) <- taskStoresToRestore) {
       if (changeLogSystemStreams.contains(storeName)) {
-        val systemStream = changeLogSystemStreams(storeName)
-        val systemStreamPartition = new SystemStreamPartition(systemStream, partition)
-        val systemConsumer = storeConsumers(storeName)
-        val systemConsumerIterator = new SystemStreamPartitionIterator(systemConsumer, systemStreamPartition)
-        store.restore(systemConsumerIterator)
+        // Check configs for restore method
+        if (config.getHDFSRestoreEnabled()) {
+          val loggedStorePartitionDir = TaskStorageManager.getStorePartitionDir(loggedStoreBaseDir, storeName, taskName)
+          val HDFSRestoreManager = new HDFSRestoreManager(config, loggedStorePartitionDir.getAbsolutePath, storeName, registry)
+          HDFSRestoreManager.restore();
+        // Use changelog to restore if flag wasn't set
+        } else {
+          val systemStream = changeLogSystemStreams(storeName)
+          val systemStreamPartition = new SystemStreamPartition(systemStream, partition)
+          val systemConsumer = storeConsumers(storeName)
+          val systemConsumerIterator = new SystemStreamPartitionIterator(systemConsumer, systemStreamPartition)
+
+          store.restore(systemConsumerIterator)
+        }
       }
     }
   }
@@ -226,7 +240,6 @@ class TaskStorageManager(
 
   def stop() {
     stopStores()
-
     flushChangelogOffsetFiles()
   }
 

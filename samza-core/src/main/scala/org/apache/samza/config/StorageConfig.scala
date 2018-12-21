@@ -67,6 +67,10 @@ class StorageConfig(config: Config) extends ScalaMapConfig(config) with Logging 
     new JavaStorageConfig(config).getAccessLogSamplingRatio(storeName)
   }
 
+  def getHDFSRestoreEnabled(): Boolean = {
+    new JavaStorageConfig(config).getHDFSRestoreEnabled();
+  }
+
   def getChangeLogDeleteRetentionInMs(storeName: String) = {
     getLong(CHANGELOG_DELETE_RETENTION_MS format storeName, DEFAULT_CHANGELOG_DELETE_RETENTION_MS)
   }

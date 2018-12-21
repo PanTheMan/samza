@@ -42,6 +42,7 @@ public class JavaStorageConfig extends MapConfig {
   private static final String MSG_SERDE = "stores.%s.msg.serde";
   private static final String CHANGELOG_STREAM = "stores.%s.changelog";
   private static final String CHANGELOG_SYSTEM = "job.changelog.system";
+  private static final String HDFSRESTORE_ENABLED = "task.hdfsrestore.enabled";
   private static final String ACCESSLOG_STREAM_SUFFIX = "access-log";
   private static final String ACCESSLOG_SAMPLING_RATIO = "stores.%s.accesslog.sampling.ratio";
   private static final String ACCESSLOG_ENABLED = "stores.%s.accesslog.enabled";
@@ -94,6 +95,11 @@ public class JavaStorageConfig extends MapConfig {
 
   public boolean getAccessLogEnabled(String storeName) {
     return getBoolean(String.format(ACCESSLOG_ENABLED, storeName), false);
+  }
+
+  // Flag to use hdfs restore vs changelog restore, with changelog as default method
+  public boolean getHDFSRestoreEnabled() {
+    return getBoolean(HDFSRESTORE_ENABLED, false);
   }
 
   public String getAccessLogStream(String changeLogStream) {

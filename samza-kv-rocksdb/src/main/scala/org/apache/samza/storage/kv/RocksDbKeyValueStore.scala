@@ -20,7 +20,6 @@
 package org.apache.samza.storage.kv
 
 import java.io.File
-import java.util
 import java.util.Comparator
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -36,7 +35,6 @@ object RocksDbKeyValueStore extends Logging {
              storeName: String, metrics: KeyValueStoreMetrics): RocksDB = {
     var ttl = 0L
     var useTTL = false
-
     if (storeConfig.containsKey("rocksdb.ttl.ms")) {
       try {
         ttl = storeConfig.getLong("rocksdb.ttl.ms")
@@ -118,12 +116,12 @@ class RocksDbKeyValueStore(
   val writeOptions: WriteOptions = new WriteOptions(),
   val flushOptions: FlushOptions = new FlushOptions(),
   val metrics: KeyValueStoreMetrics = new KeyValueStoreMetrics) extends KeyValueStore[Array[Byte], Array[Byte]] with Logging {
-
   // lazy val here is important because the store directories do not exist yet, it can only be opened
   // after the directories are created, which happens much later from now.
   private lazy val db = RocksDbKeyValueStore.openDB(dir, options, storeConfig, isLoggedStore, storeName, metrics)
   private val lexicographic = new LexicographicComparator()
-
+  // Lazy here because inside requires db to be properly initiailized later
+  private lazy val backup = new HDFSBackupManager(storeConfig, dir, db, metrics.registry)
   /**
     * null while the store is open. Set to an Exception holding the stacktrace at the time of first close by #close.
     * Reads and writes to this field must be guarded by stateChangeLock.
@@ -231,6 +229,9 @@ class RocksDbKeyValueStore(
     metrics.flushes.inc
     trace("Flushing store: %s" format storeName)
     db.flush(flushOptions)
+    if(storeConfig.getBoolean("task.hdfsrestore.enabled")) {
+      backup.createBackup()
+    }
     trace("Flushed store: %s" format storeName)
   }
 
@@ -306,7 +307,7 @@ class RocksDbKeyValueStore(
       iter.next()
       metrics.bytesRead.inc(entry.getKey.length)
       if (entry.getValue != null) {
-        metrics.bytesRead.inc(entry.getValue.length)
+         metrics.bytesRead.inc(entry.getValue.length)
       }
       entry
     }

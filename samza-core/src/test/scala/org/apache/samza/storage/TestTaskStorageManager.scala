@@ -26,6 +26,7 @@ import java.util
 import org.apache.samza.Partition
 import org.apache.samza.config.{MapConfig, StorageConfig}
 import org.apache.samza.container.TaskName
+import org.apache.samza.metrics.{MetricsRegistry, MetricsRegistryMap}
 import org.apache.samza.storage.StoreProperties.StorePropertiesBuilder
 import org.apache.samza.system.SystemStreamMetadata.SystemStreamPartitionMetadata
 import org.apache.samza.system._
@@ -700,6 +701,8 @@ class TaskStorageManagerBuilder extends MockitoSugar {
       loggedStoreBaseDir = loggedStoreBaseDir,
       partition = partition,
       systemAdmins = buildSystemAdmins(systemAdminsMap),
+      registry = new MetricsRegistryMap(),
+      config = new MapConfig(),
       new StorageConfig(new MapConfig()).getChangeLogDeleteRetentionsInMs,
       SystemClock.instance
     )
